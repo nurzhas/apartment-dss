@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/cache.sqlite
+data/datasets/
+demo_charts.html
+.env

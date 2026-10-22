@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Подбор квартиры</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v12H19v-8h-6v8H4z' fill='%232a78d6'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 15 16 5l12 10v12H19v-8h-6v8H4z"/></svg>
+    <div>
+      <div class="brand-title">Подбор квартиры</div>
+      <div class="brand-sub">СППР · Астана · данные Krisha.kz</div>
+    </div>
+  </div>
+  <div class="seg" id="mode" role="tablist" aria-label="Тип сделки">
+    <button data-mode="sale" class="on">Покупка</button>
+    <button data-mode="rent">Аренда</button>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="pick" class="on">Подбор</button>
+    <button data-tab="calc">Расчёт · 4.2</button>
+    <button data-tab="formal">Формализация · 4.1</button>
+  </nav>
+  <button class="icon-btn" id="theme" title="Светлая / тёмная тема" aria-label="Сменить тему">
+    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+  </button>
+</header>
+
+<div class="layout">
+  <!-- ============ preferences ============ -->
+  <aside class="side" id="side">
+    <section class="panel">
+      <h2>1. Объявления <button type="button" class="ask" data-ask="Объясни раздел «Объявления»: откуда берутся данные, что такое демо-набор и новый поиск, на что влияют фильтры поиска и галочка «открывать страницы объявлений»." title="Спросить ИИ">?</button></h2>
+      <label class="field">
+        <span>Набор данных</span>
+        <select id="dataset"></select>
+      </label>
+      <details id="search-box">
+        <summary>Новый поиск на Krisha.kz</summary>
+        <div class="field">
+          <span>Комнат</span>
+          <div class="chips" id="s-rooms">
+            <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5+</button>
+          </div>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Цена от, ₸</span><input id="s-price-from" inputmode="numeric" placeholder="—"></label>
+          <label class="field"><span>Цена до, ₸</span><input id="s-price-to" inputmode="numeric" placeholder="—"></label>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Площадь от, м²</span><input id="s-area" inputmode="numeric" placeholder="—"></label>
+          <label class="field sale-only"><span>Год от</span><input id="s-year" inputmode="numeric" placeholder="—"></label>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="s-not-first"> не первый этаж</label>
+          <label><input type="checkbox" id="s-not-last"> не последний</label>
+        </div>
+        <label class="field">
+          <span>Страниц поиска: <b id="s-pages-v">2</b> (≈ <span id="s-pages-n">40</span> объявлений)</span>
+          <input type="range" id="s-pages" min="1" max="5" value="2">
+        </label>
+        <label class="checks"><input type="checkbox" id="s-details"> открывать страницы объявлений — точные координаты и больше параметров, но медленнее (пауза 3 с); если Krisha включит проверку на бота, остановимся</label>
+        <button class="btn primary wide" id="s-go">Найти и загрузить</button>
+        <p class="hint">Параметры берутся из карточек поиска, координаты — по адресу через OpenStreetMap (дом → улица → ЖК → район). Результаты кэшируются, повторный поиск быстрее.</p>
+      </details>
+      <div class="progress hidden" id="s-progress">
+        <div class="bar"><i id="s-bar"></i></div>
+        <div class="progress-row"><span id="s-msg">…</span><button class="link" id="s-cancel">Остановить</button></div>
+      </div>
+      <p class="ds-info" id="ds-info"></p>
+    </section>
+
+    <section class="panel">
+      <h2>2. Точка притяжения <button type="button" class="ask" data-ask="Зачем нужна точка притяжения и как от неё считается расстояние? Насколько точны координаты квартир?" title="Спросить ИИ">?</button></h2>
+      <p class="hint">Работа, учёба, родители — от неё считается критерий «Расстояние». Выберите из списка или кликните по карте.</p>
+      <select id="place"></select>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>3. Важность критериев <button type="button" class="ask" data-ask="Объясни раздел «Важность критериев»: что значат ползунки и галочки, как важность превращается в веса, что такое cost и benefit, зачем пресеты и AHP." title="Спросить ИИ">?</button></h2>
+        <button class="link" id="ahp-open">Веса по AHP</button>
+      </div>
+      <div class="chips presets" id="presets"></div>
+      <div id="crit"></div>
+      <p class="sum-line">Сумма весов: <b id="w-sum">1.00</b> — веса = важность / сумма важностей</p>
+    </section>
+
+    <section class="panel">
+      <h2>4. Ограничения <button type="button" class="ask" data-ask="Зачем нужны ограничения, если есть веса? Чем ограничение отличается от веса? Покажи на примере текущих данных." title="Спросить ИИ">?</button></h2>
+      <p class="hint">Жёсткие условия: квартира, которая их нарушает, не участвует в рейтинге.</p>
+      <div class="row2">
+        <label class="field"><span>Бюджет до, ₸</span><input id="c-price" inputmode="numeric" placeholder="без лимита"></label>
+        <label class="field"><span>Площадь от, м²</span><input id="c-area" inputmode="numeric" placeholder="—"></label>
+      </div>
+      <div class="field">
+        <span>Комнат</span>
+        <div class="chips" id="c-rooms">
+          <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5+</button>
+        </div>
+      </div>
+      <div class="row2">
+        <label class="field"><span>Год постройки от</span><input id="c-year" inputmode="numeric" placeholder="—"></label>
+        <label class="field"><span>До точки, км, не дальше</span><input id="c-dist" inputmode="decimal" placeholder="—"></label>
+      </div>
+      <label class="field"><span>Состояние не хуже</span>
+        <select id="c-cond">
+          <option value="">любое</option>
+          <option value="2">требует ремонта (2)</option>
+          <option value="3">среднее (3)</option>
+          <option value="4">аккуратный ремонт (4)</option>
+          <option value="5">свежий ремонт (5)</option>
+        </select>
+      </label>
+      <div class="checks">
+        <label><input type="checkbox" id="c-not-first"> не первый этаж</label>
+        <label><input type="checkbox" id="c-not-last"> не последний</label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>5. Метод и данные <button type="button" class="ask" data-ask="Объясни раздел «Метод и данные»: чем отличаются WSM, TOPSIS и WPM и какой выбрать, и что делать с параметрами, которые не указаны в объявлении." title="Спросить ИИ">?</button></h2>
+      <div class="field"><span>Сортировать по</span>
+        <div class="seg small" id="sort">
+          <button data-v="wsm" class="on">WSM</button><button data-v="topsis">TOPSIS</button><button data-v="wpm">WPM</button>
+        </div>
+      </div>
+      <label class="field"><span>Если параметр не указан в объявлении</span>
+        <select id="missing">
+          <option value="worst">подставить худшее значение</option>
+          <option value="median">подставить медиану</option>
+          <option value="drop">исключить объявление</option>
+        </select>
+      </label>
+    </section>
+  </aside>
+
+  <!-- ============ results ============ -->
+  <main class="main" id="main">
+    <div class="alert hidden" id="alert"></div>
+
+    <section class="view" id="view-pick">
+      <div class="stats" id="stats"></div>
+      <div class="pick-grid">
+        <div class="card map-card"><div id="map"></div></div>
+        <div class="card verdict" id="verdict"></div>
+      </div>
+      <div class="list-head">
+        <h2>Рейтинг квартир <button type="button" class="ask" data-ask="Как читать карточку квартиры в рейтинге: место, код, плюсы и минусы, последствия, баллы WSM, TOPSIS и WPM?" title="Спросить ИИ">?</button></h2>
+        <span class="muted" id="list-note"></span>
+      </div>
+      <ol class="list" id="list"></ol>
+      <button class="btn wide hidden" id="more">Показать ещё</button>
+
+      <div class="charts">
+        <figure class="card chart">
+          <figcaption><b>Баллы WSM, TOPSIS и WPM</b><button type="button" class="ask" data-ask="Как читать график «Баллы WSM, TOPSIS и WPM» и что он сейчас показывает?" title="Спросить ИИ">?</button><span>лидеры подборки; чем длиннее, тем лучше</span></figcaption>
+          <div class="plot" id="ch-scores"></div>
+        </figure>
+        <figure class="card chart">
+          <figcaption><b>Из чего сложился балл</b><button type="button" class="ask" data-ask="Как читать график «Из чего сложился балл» и что он сейчас показывает?" title="Спросить ИИ">?</button><span>вклад каждого критерия в WSM: вес × нормализованное значение</span></figcaption>
+          <div class="plot" id="ch-contrib"></div>
+        </figure>
+        <figure class="card chart">
+          <figcaption><b>Места по двум методам</b><button type="button" class="ask" data-ask="Как читать график «Места по двум методам» и что он сейчас показывает?" title="Спросить ИИ">?</button><span>синим — TOPSIS ставит квартиру выше, чем WSM, оранжевым — ниже</span></figcaption>
+          <div class="plot" id="ch-ranks"></div>
+        </figure>
+        <figure class="card chart">
+          <figcaption><b>Нормализованная матрица</b><button type="button" class="ask" data-ask="Как читать график «Нормализованная матрица» и что он сейчас показывает?" title="Спросить ИИ">?</button><span>1 — лучшее значение критерия в подборке</span></figcaption>
+          <div class="plot" id="ch-heat"></div>
+        </figure>
+        <figure class="card chart wide">
+          <figcaption>
+            <b>Чувствительность к весу</b><button type="button" class="ask" data-ask="Объясни анализ чувствительности на текущем графике: что значат линии, вертикальные отметки и насколько устойчив лидер." title="Спросить ИИ">?</button>
+            <span>как меняются баллы лидеров, если менять вес одного критерия (остальные — пропорционально)</span>
+            <span class="sens-ctl">
+              <select id="sens-key"></select>
+              <span class="seg small" id="sens-method"><button data-v="wsm" class="on">WSM</button><button data-v="topsis">TOPSIS</button></span>
+            </span>
+          </figcaption>
+          <div class="plot" id="ch-sens"></div>
+          <p class="sens-note" id="sens-note"></p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="view hidden" id="view-calc"></section>
+    <section class="view hidden" id="view-formal"></section>
+  </main>
+</div>
+
+<dialog id="ahp">
+  <form method="dialog" class="ahp-box">
+    <h2>Веса методом AHP (Саати)</h2>
+    <p class="hint">Сравните критерии попарно: насколько один важнее другого по шкале 1–9. Веса — нормированные средние геометрические строк матрицы; согласованность проверяется по CR ≤ 0.10.</p>
+    <div id="ahp-pairs"></div>
+    <div class="ahp-out" id="ahp-out"></div>
+    <div class="ahp-actions">
+      <button class="btn" value="cancel">Отмена</button>
+      <button class="btn primary" id="ahp-apply" value="apply" disabled>Применить веса</button>
+    </div>
+  </form>
+</dialog>
+
+<button class="ai-fab hidden" id="ai-fab" aria-label="Открыть ИИ-помощника">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>
+  <span>Спросить ИИ</span>
+</button>
+<aside class="ai hidden" id="ai" aria-label="ИИ-помощник">
+  <header class="ai-head">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>
+    <div class="ai-title"><b>ИИ-помощник</b><small>объясняет и считает на ваших данных</small></div>
+    <button class="link" id="ai-new">Новый диалог</button>
+    <button class="icon-btn" id="ai-close" aria-label="Закрыть">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+    </button>
+  </header>
+  <div class="ai-log" id="ai-log">
+    <div class="ai-hello" id="ai-hello">
+      <p><b>Привет!</b> Я объясню любую настройку и шаг расчёта на текущих данных, посчитаю «что будет, если…» и, если попросите, сам поменяю веса и ограничения.</p>
+      <p class="muted">Значок <span class="ask-demo">?</span> рядом с разделами, графиками и квартирами задаёт мне вопрос именно про это место.</p>
+      <div class="chips ai-chips" id="ai-chips"></div>
+    </div>
+  </div>
+  <form class="ai-form" id="ai-form">
+    <textarea id="ai-input" rows="1" maxlength="2000" placeholder="Спросите про настройку, метод или квартиру…"></textarea>
+    <button class="btn primary" id="ai-send" aria-label="Отправить">
+      <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </form>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/vendor/plotly.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
